@@ -1,14 +1,14 @@
 import { StyleSheet } from 'react-native';
 
-import EditScreenInfo from '@/components/EditScreenInfo';
-import { Text, View } from '@/components/Themed';
+import { Text, View } from '@/src/components/common/Themed';
 
-export default function TabOneScreen() {
+export default function DashboardScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Tab One</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/(tabs)/index.tsx" />
+      <Text style={styles.title}>Personal Finance Manager</Text>
+      <Text style={styles.description}>
+        Your financial dashboard will appear here.
+      </Text>
     </View>
   );
 }
@@ -18,14 +18,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 24,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
+  description: {
+    marginTop: 12,
+    fontSize: 15,
+    textAlign: 'center',
+    opacity: 0.7,
   },
 });
