@@ -1,4 +1,3 @@
-
 export const colors = {
   light: {
     background: "#F7F8FA",
