@@ -1,9 +1,10 @@
 import {
-    collection,
-    doc,
-    getDocs,
-    runTransaction,
-    serverTimestamp,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
 } from "firebase/firestore";
 
 import { APP_CURRENCY, FINANCIAL_TIME_ZONE } from "@/src/constants/app";
@@ -24,6 +25,39 @@ function getCurrentUserId(): string {
   }
 
   return userId;
+}
+
+export type InitialSetupStatus = "NOT_STARTED" | "COMPLETED" | "INCONSISTENT";
+
+/**
+ * Determine whether the authenticated user has completed
+ * the initial financial setup.
+ */
+export async function getInitialSetupStatus(): Promise<InitialSetupStatus> {
+  const userId = getCurrentUserId();
+
+  const settingsRef = doc(db, "users", userId, "profile", "settings");
+
+  const accountsCollection = collection(db, "users", userId, "accounts");
+
+  const walletRef = doc(accountsCollection, "wallet");
+
+  const [settingsSnapshot, walletSnapshot, accountsSnapshot] =
+    await Promise.all([
+      getDoc(settingsRef),
+      getDoc(walletRef),
+      getDocs(accountsCollection),
+    ]);
+
+  if (settingsSnapshot.exists() && walletSnapshot.exists()) {
+    return "COMPLETED";
+  }
+
+  if (!settingsSnapshot.exists() && accountsSnapshot.empty) {
+    return "NOT_STARTED";
+  }
+
+  return "INCONSISTENT";
 }
 
 /**

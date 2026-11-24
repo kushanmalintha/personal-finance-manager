@@ -3,31 +3,32 @@ import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { AppButton } from "@/src/components/common/AppButton";
 import { ScreenContainer } from "@/src/components/common/ScreenContainer";
+import { getInitialSetupStatus } from "@/src/features/accounts/data/initialSetupRepository";
 import {
-    loginSchema,
-    type LoginInput,
+  loginSchema,
+  type LoginInput,
 } from "@/src/features/auth/application/loginSchema";
 import { loginUser } from "@/src/features/auth/application/loginUser";
 import { loginWithEmail } from "@/src/features/auth/data/authService";
 import { useColorScheme } from "@/src/hooks/useColorScheme";
 import {
-    colors,
-    componentSizes,
-    radius,
-    spacing,
-    typography,
+  colors,
+  componentSizes,
+  radius,
+  spacing,
+  typography,
 } from "@/src/theme/tokens";
 
 function getLoginErrorMessage(error: unknown): string {
@@ -61,8 +62,17 @@ function getLoginErrorMessage(error: unknown): string {
       return "Email and password login is currently unavailable.";
 
     default:
-      return "Unable to sign in. Please try again.";
+      break;
   }
+
+  if (
+    error instanceof Error &&
+    error.message === "INITIAL_SETUP_DATA_INCONSISTENT"
+  ) {
+    return "Your saved financial setup is incomplete. Please contact support before continuing.";
+  }
+
+  return "Unable to sign in. Please try again.";
 }
 
 export default function LoginScreen() {
@@ -93,7 +103,7 @@ export default function LoginScreen() {
     setIsSubmitting(true);
 
     try {
-      await loginUser(values, loginWithEmail);
+      await loginUser(values, loginWithEmail, getInitialSetupStatus);
 
       // Navigation will be handled by the authentication gate
       // in the later authentication and navigation tasks.

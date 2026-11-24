@@ -3,7 +3,7 @@ import { create } from "zustand";
 type AuthSessionState = {
   userId: string | null;
   setupComplete: boolean;
-  startSession: (userId: string) => void;
+  startSession: (userId: string, setupComplete?: boolean) => void;
   completeSetup: () => void;
   endSession: () => void;
 };
@@ -15,10 +15,10 @@ export const useAuthSessionStore = create<AuthSessionState>((set) => ({
   // Until Phase 5 checks the user's Firestore settings, setup is required.
   setupComplete: false,
 
-  startSession: (userId) =>
+  startSession: (userId, setupComplete = false) =>
     set({
       userId,
-      setupComplete: false,
+      setupComplete,
     }),
 
   completeSetup: () => set({ setupComplete: true }),

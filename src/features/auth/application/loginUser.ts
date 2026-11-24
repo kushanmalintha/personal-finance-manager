@@ -11,9 +11,14 @@ export type LoginAccount = (
   password: string,
 ) => Promise<AuthenticatedUser>;
 
+export type ResolveInitialSetupStatus = () => Promise<
+  "NOT_STARTED" | "COMPLETED" | "INCONSISTENT"
+>;
+
 export async function loginUser(
   input: LoginInput,
   loginAccount: LoginAccount,
+  resolveInitialSetupStatus: ResolveInitialSetupStatus,
 ): Promise<AuthenticatedUser> {
   const validatedInput = loginSchema.parse(input);
 
@@ -22,8 +27,17 @@ export async function loginUser(
     validatedInput.password,
   );
 
-  // Open the application session only after Firebase login succeeds.
-  useAuthSessionStore.getState().startSession(user.uid);
+  // Check the user's persisted setup status after authentication.
+  const setupStatus = await resolveInitialSetupStatus();
+
+  if (setupStatus === "INCONSISTENT") {
+    throw new Error("INITIAL_SETUP_DATA_INCONSISTENT");
+  }
+
+  // Open the application session with the correct setup status.
+  useAuthSessionStore
+    .getState()
+    .startSession(user.uid, setupStatus === "COMPLETED");
 
   return user;
 }
