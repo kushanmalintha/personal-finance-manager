@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useState } from "react";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -14,8 +15,10 @@ import {
 import { AppButton } from "@/src/components/common/AppButton";
 import { AppCard } from "@/src/components/common/AppCard";
 import { ScreenContainer } from "@/src/components/common/ScreenContainer";
-import { initialSetupSchema } from "@/src/features/accounts/application/initialSetupSchema";
+import { completeInitialSetup } from "@/src/features/accounts/application/completeInitialSetup";
+import { saveInitialSetup } from "@/src/features/accounts/data/initialSetupRepository";
 import { useColorScheme } from "@/src/hooks/useColorScheme";
+import { useAuthSessionStore } from "@/src/store/authSessionStore";
 import {
   colors,
   componentSizes,
@@ -40,6 +43,79 @@ type InitialSetupFormValues = {
     openingDate: string;
   }[];
 };
+
+function getInitialSetupErrorMessage(error: unknown): string {
+  // Handle Firestore and Firebase error codes.
+  const errorCode =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+      ? error.code
+      : "";
+
+  switch (errorCode) {
+    case "permission-denied":
+      return "Unable to save your setup because access was denied. Please check your connection or try again later.";
+
+    case "unauthenticated":
+      return "Your session has expired. Please sign in again.";
+
+    case "unavailable":
+    case "deadline-exceeded":
+    case "network-request-failed":
+      return "Unable to connect to the server. Please check your internet connection.";
+
+    case "aborted":
+      return "The setup could not be completed. Please try again.";
+
+    case "already-exists":
+      return "Your initial setup has already been completed.";
+
+    default:
+      break;
+  }
+
+  // Display the first Zod validation issue when available.
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "issues" in error &&
+    Array.isArray(error.issues)
+  ) {
+    const firstIssue = error.issues[0];
+
+    if (
+      typeof firstIssue === "object" &&
+      firstIssue !== null &&
+      "message" in firstIssue &&
+      typeof firstIssue.message === "string"
+    ) {
+      return firstIssue.message;
+    }
+  }
+
+  if (error instanceof Error) {
+    switch (error.message) {
+      case "Initial setup has already been completed.":
+        return "Your initial setup has already been completed.";
+
+      case "Account documents already exist. Initial setup cannot be repeated.":
+        return "Account information already exists. Initial setup cannot be repeated.";
+
+      case "Invalid LKR amount format.":
+        return "Please enter valid LKR amounts with up to two decimal places.";
+
+      case "LKR amount exceeds the supported range.":
+        return "One of the entered amounts exceeds the supported limit.";
+
+      default:
+        break;
+    }
+  }
+
+  return "Unable to complete your initial setup. Please try again.";
+}
 
 function FormField({
   label,
@@ -88,12 +164,15 @@ export default function InitialSetupScreen() {
   const theme = useColorScheme();
   const themeColors = colors[theme];
 
-  const [validationMessage, setValidationMessage] = useState<string | null>(
-    null,
-  );
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const completeSetup = useAuthSessionStore((state) => state.completeSetup);
 
-  const { control, handleSubmit } = useForm<InitialSetupFormValues>({
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+
+  const {
+    control,
+    handleSubmit,
+    formState: { isSubmitting },
+  } = useForm<InitialSetupFormValues>({
     defaultValues: {
       wallet: {
         name: "My Wallet",
@@ -114,9 +193,12 @@ export default function InitialSetupScreen() {
     name: "bankAccounts",
   });
 
-  const onSubmit = (values: InitialSetupFormValues) => {
-    setValidationError(null);
-    setValidationMessage(null);
+  /**
+   * Convert the form's LKR strings into integer minor units,
+   * validate through the application use case, and save.
+   */
+  const onSubmit = async (values: InitialSetupFormValues) => {
+    setSubmissionError(null);
 
     try {
       const setupInput = {
@@ -125,7 +207,9 @@ export default function InitialSetupScreen() {
           openingBalance: parseLkrToMinorUnits(values.wallet.openingBalance),
           openingDate: values.wallet.openingDate,
         },
+
         dailySpendingLimit: parseLkrToMinorUnits(values.dailySpendingLimit),
+
         bankAccounts: values.bankAccounts.map((account) => ({
           name: account.name,
           bankName: account.bankName,
@@ -134,22 +218,17 @@ export default function InitialSetupScreen() {
         })),
       };
 
-      const result = initialSetupSchema.safeParse(setupInput);
+      // The application layer validates the input and delegates
+      // persistence to the injected data-layer operation.
+      await completeInitialSetup(setupInput, saveInitialSetup);
 
-      if (!result.success) {
-        setValidationError(
-          result.error.issues[0]?.message ?? "Please check your details.",
-        );
-        return;
-      }
+      // Only mark setup as complete after Firestore succeeds.
+      completeSetup();
 
-      setValidationMessage(
-        "Your setup details are valid. They are ready to be saved.",
-      );
-    } catch {
-      setValidationError(
-        "Please enter valid LKR amounts with up to two decimal places.",
-      );
+      // The existing setup route guard observes this state change
+      // and redirects the user to the Dashboard.
+    } catch (error) {
+      setSubmissionError(getInitialSetupErrorMessage(error));
     }
   };
 
@@ -204,6 +283,7 @@ export default function InitialSetupScreen() {
                     value={field.value}
                     onChangeText={field.onChange}
                     placeholder="My Wallet"
+                    editable={!isSubmitting}
                   />
                 )}
               />
@@ -218,6 +298,7 @@ export default function InitialSetupScreen() {
                     onChangeText={field.onChange}
                     placeholder="0.00"
                     keyboardType="decimal-pad"
+                    editable={!isSubmitting}
                   />
                 )}
               />
@@ -231,6 +312,7 @@ export default function InitialSetupScreen() {
                     value={field.value}
                     onChangeText={field.onChange}
                     placeholder="YYYY-MM-DD"
+                    editable={!isSubmitting}
                   />
                 )}
               />
@@ -265,6 +347,7 @@ export default function InitialSetupScreen() {
                     onChangeText={field.onChange}
                     placeholder="For example, 5000.00"
                     keyboardType="decimal-pad"
+                    editable={!isSubmitting}
                   />
                 )}
               />
@@ -300,6 +383,7 @@ export default function InitialSetupScreen() {
 
                     <Pressable
                       onPress={() => remove(index)}
+                      disabled={isSubmitting}
                       accessibilityRole="button"
                       accessibilityLabel={`Remove bank account ${index + 1}`}
                     >
@@ -323,6 +407,7 @@ export default function InitialSetupScreen() {
                         value={field.value}
                         onChangeText={field.onChange}
                         placeholder="For example, Savings"
+                        editable={!isSubmitting}
                       />
                     )}
                   />
@@ -336,6 +421,7 @@ export default function InitialSetupScreen() {
                         value={field.value}
                         onChangeText={field.onChange}
                         placeholder="For example, Commercial Bank"
+                        editable={!isSubmitting}
                       />
                     )}
                   />
@@ -350,6 +436,7 @@ export default function InitialSetupScreen() {
                         onChangeText={field.onChange}
                         placeholder="0.00"
                         keyboardType="decimal-pad"
+                        editable={!isSubmitting}
                       />
                     )}
                   />
@@ -363,6 +450,7 @@ export default function InitialSetupScreen() {
                         value={field.value}
                         onChangeText={field.onChange}
                         placeholder="YYYY-MM-DD"
+                        editable={!isSubmitting}
                       />
                     )}
                   />
@@ -371,6 +459,7 @@ export default function InitialSetupScreen() {
 
               <AppButton
                 variant="outline"
+                disabled={isSubmitting}
                 onPress={() =>
                   append({
                     name: "",
@@ -384,24 +473,25 @@ export default function InitialSetupScreen() {
               </AppButton>
             </AppCard>
 
-            {validationError && (
+            {submissionError && (
               <Text accessibilityRole="alert" style={styles.errorText}>
-                {validationError}
+                {submissionError}
               </Text>
             )}
 
-            {validationMessage && (
-              <Text
-                accessibilityRole="status"
-                style={[styles.successText, { color: themeColors.success }]}
-              >
-                {validationMessage}
-              </Text>
-            )}
-
-            <AppButton onPress={() => void handleSubmit(onSubmit)()}>
-              Validate setup details
+            <AppButton
+              disabled={isSubmitting}
+              onPress={() => void handleSubmit(onSubmit)()}
+            >
+              {isSubmitting ? "Setting up..." : "Complete setup"}
             </AppButton>
+
+            {isSubmitting && (
+              <ActivityIndicator
+                color={themeColors.primary}
+                style={styles.loadingIndicator}
+              />
+            )}
 
             <Text
               style={[styles.footerNote, { color: themeColors.textSecondary }]}
@@ -428,7 +518,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.size.xxl,
     fontWeight: typography.weight.bold,
-    color: "#17211C",
     marginBottom: spacing.sm,
   },
   subtitle: {
@@ -489,9 +578,8 @@ const styles = StyleSheet.create({
     color: "#D64545",
     fontSize: typography.size.sm,
   },
-  successText: {
-    fontSize: typography.size.sm,
-    fontWeight: typography.weight.medium,
+  loadingIndicator: {
+    marginTop: -spacing.sm,
   },
   footerNote: {
     fontSize: typography.size.xs,
