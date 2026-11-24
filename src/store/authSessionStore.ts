@@ -2,15 +2,30 @@ import { create } from "zustand";
 
 type AuthSessionState = {
   userId: string | null;
+  setupComplete: boolean;
   startSession: (userId: string) => void;
+  completeSetup: () => void;
   endSession: () => void;
 };
 
 export const useAuthSessionStore = create<AuthSessionState>((set) => ({
-  // A new application process always starts without an active session.
+  // Every fresh application launch starts without an active session.
   userId: null,
 
-  startSession: (userId) => set({ userId }),
+  // Until Phase 5 checks the user's Firestore settings, setup is required.
+  setupComplete: false,
 
-  endSession: () => set({ userId: null }),
+  startSession: (userId) =>
+    set({
+      userId,
+      setupComplete: false,
+    }),
+
+  completeSetup: () => set({ setupComplete: true }),
+
+  endSession: () =>
+    set({
+      userId: null,
+      setupComplete: false,
+    }),
 }));

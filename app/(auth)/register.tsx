@@ -93,9 +93,8 @@ export default function RegisterScreen() {
     try {
       await registerUser(values, registerWithEmail);
 
-      // Temporary destination until the authentication and
-      // initial-setup navigation gates are implemented.
-      router.replace("/(tabs)");
+      // The authentication route guard observes the new session
+      // and redirects to the root entry route automatically.
     } catch (error) {
       setServerError(getRegistrationErrorMessage(error));
     } finally {
@@ -269,7 +268,7 @@ export default function RegisterScreen() {
             )}
 
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => router.replace("/(auth)/login")}
               disabled={isSubmitting}
               style={styles.backButton}
               accessibilityRole="button"
