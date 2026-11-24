@@ -239,7 +239,7 @@ export default function LoginScreen() {
 
             <Pressable
               onPress={() => {
-                // Password reset navigation
+                router.push("/(auth)/forgot-password");
               }}
               disabled={isSubmitting}
               style={styles.forgotPassword}
