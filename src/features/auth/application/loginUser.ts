@@ -1,3 +1,4 @@
+import { useAuthSessionStore } from "@/src/store/authSessionStore";
 import { loginSchema, type LoginInput } from "./loginSchema";
 
 export type AuthenticatedUser = {
@@ -16,5 +17,13 @@ export async function loginUser(
 ): Promise<AuthenticatedUser> {
   const validatedInput = loginSchema.parse(input);
 
-  return loginAccount(validatedInput.email, validatedInput.password);
+  const user = await loginAccount(
+    validatedInput.email,
+    validatedInput.password,
+  );
+
+  // Open the application session only after Firebase login succeeds.
+  useAuthSessionStore.getState().startSession(user.uid);
+
+  return user;
 }

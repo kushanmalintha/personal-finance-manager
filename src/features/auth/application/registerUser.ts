@@ -1,7 +1,5 @@
-import {
-  registerSchema,
-  type RegisterInput,
-} from "./registerSchema";
+import { useAuthSessionStore } from "@/src/store/authSessionStore";
+import { registerSchema, type RegisterInput } from "./registerSchema";
 
 export type RegisteredUser = {
   uid: string;
@@ -10,18 +8,22 @@ export type RegisteredUser = {
 
 export type RegisterAccount = (
   email: string,
-  password: string
+  password: string,
 ) => Promise<RegisteredUser>;
 
-// Validate the input and execute the registration operation.
 export async function registerUser(
   input: RegisterInput,
-  registerAccount: RegisterAccount
+  registerAccount: RegisterAccount,
 ): Promise<RegisteredUser> {
   const validatedInput = registerSchema.parse(input);
 
-  return registerAccount(
+  const user = await registerAccount(
     validatedInput.email,
-    validatedInput.password
+    validatedInput.password,
   );
+
+  // Registration creates an authenticated Firebase user.
+  useAuthSessionStore.getState().startSession(user.uid);
+
+  return user;
 }
