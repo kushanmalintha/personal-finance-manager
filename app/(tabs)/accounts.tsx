@@ -141,6 +141,10 @@ export default function AccountsScreen() {
         </Text>
       </View>
 
+      <AppButton onPress={() => router.push("/account/add-bank-account")}>
+        + Add bank account
+      </AppButton>
+
       {isLoading ? (
         <ActivityIndicator
           size="large"
