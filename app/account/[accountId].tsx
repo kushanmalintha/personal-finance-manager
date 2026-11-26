@@ -1,19 +1,41 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { AppButton } from "@/src/components/common/AppButton";
 import { AppCard } from "@/src/components/common/AppCard";
 import { ScreenContainer } from "@/src/components/common/ScreenContainer";
+import type { AccountLifecycleStatus } from "@/src/features/accounts/application/accountLifecycle";
+import {
+  activateAccount,
+  deactivateAccount,
+  deleteAccount,
+  updateOpeningBalance,
+} from "@/src/features/accounts/application/accountLifecycle";
 import { getAccountDetails } from "@/src/features/accounts/application/getAccountDetails";
+import {
+  activateAccountRecord,
+  deactivateAccountRecord,
+  deleteAccountRecord,
+  getAccountLifecycleStatus,
+  updateOpeningBalanceRecord,
+} from "@/src/features/accounts/data/accountLifecycleRepository";
 import { getAccount } from "@/src/features/accounts/data/accountRepository";
 import { useColorScheme } from "@/src/hooks/useColorScheme";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 import type { Account } from "@/src/types/domain";
-import { formatMinorUnitsAsLkr } from "@/src/utils/money";
+import { formatMinorUnitsAsLkr, parseLkrToMinorUnits } from "@/src/utils/money";
 
 export default function AccountDetailsScreen() {
   const router = useRouter();
+
   const params = useLocalSearchParams<{
     accountId?: string | string[];
   }>();
@@ -27,12 +49,17 @@ export default function AccountDetailsScreen() {
   const themeColors = colors[theme];
 
   const [account, setAccount] = useState<Account | null>(null);
+  const [lifecycleStatus, setLifecycleStatus] =
+    useState<AccountLifecycleStatus | null>(null);
+
+  const [openingBalanceInput, setOpeningBalanceInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    let isActive = true;
+    let isMounted = true;
 
     async function loadAccount() {
       setIsLoading(true);
@@ -47,19 +74,28 @@ export default function AccountDetailsScreen() {
       try {
         const result = await getAccountDetails(accountId, getAccount);
 
-        if (isActive) {
-          setAccount(result);
-
-          if (!result) {
+        if (!result) {
+          if (isMounted) {
+            setAccount(null);
+            setLifecycleStatus(null);
             setError("The requested account could not be found.");
           }
+          return;
+        }
+
+        const status = await getAccountLifecycleStatus(result.id, result.type);
+
+        if (isMounted) {
+          setAccount(result);
+          setLifecycleStatus(status);
+          setOpeningBalanceInput(minorUnitsToInput(result.openingBalance));
         }
       } catch {
-        if (isActive) {
+        if (isMounted) {
           setError("Unable to load account details. Please try again.");
         }
       } finally {
-        if (isActive) {
+        if (isMounted) {
           setIsLoading(false);
         }
       }
@@ -68,17 +104,121 @@ export default function AccountDetailsScreen() {
     void loadAccount();
 
     return () => {
-      isActive = false;
+      isMounted = false;
     };
   }, [accountId, reloadToken]);
 
+  async function executeAction(
+    operation: () => Promise<void>,
+    successMessage: string,
+    returnToAccounts = false,
+  ) {
+    setIsSaving(true);
+
+    try {
+      await operation();
+
+      if (returnToAccounts) {
+        Alert.alert("Success", successMessage, [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+      } else {
+        Alert.alert("Success", successMessage);
+        setReloadToken((current) => current + 1);
+      }
+    } catch (operationError) {
+      Alert.alert(
+        "Operation failed",
+        operationError instanceof Error
+          ? operationError.message
+          : "Unable to complete the operation. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function confirmLifecycleAction(
+    title: string,
+    message: string,
+    operation: () => Promise<void>,
+    successMessage: string,
+    returnToAccounts = false,
+  ) {
+    Alert.alert(title, message, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Confirm",
+        style: "destructive",
+        onPress: () => {
+          void executeAction(operation, successMessage, returnToAccounts);
+        },
+      },
+    ]);
+  }
+
+  function handleActivation() {
+    if (!account) return;
+
+    if (account.isActive) {
+      confirmLifecycleAction(
+        "Deactivate account?",
+        "This account will no longer be available for new transactions. Its historical information will be preserved.",
+        () => deactivateAccount(account.id, deactivateAccountRecord),
+        "Account deactivated successfully.",
+      );
+    } else {
+      confirmLifecycleAction(
+        "Activate account?",
+        "This account will become available for new transactions.",
+        () => activateAccount(account.id, activateAccountRecord),
+        "Account activated successfully.",
+      );
+    }
+  }
+
+  function handleDelete() {
+    if (!account || account.type !== "BANK") return;
+
+    confirmLifecycleAction(
+      "Delete account?",
+      `Permanently delete "${account.name}"? This action cannot be undone.`,
+      () => deleteAccount(account.id, deleteAccountRecord),
+      "Account deleted successfully.",
+      true,
+    );
+  }
+
+  async function handleOpeningBalanceUpdate() {
+    if (!account) return;
+
+    let amount: number;
+
+    try {
+      amount = parseLkrToMinorUnits(openingBalanceInput);
+    } catch (parseError) {
+      Alert.alert(
+        "Invalid amount",
+        parseError instanceof Error
+          ? parseError.message
+          : "Enter a valid LKR amount.",
+      );
+      return;
+    }
+
+    await executeAction(
+      () =>
+        updateOpeningBalance(account.id, amount, updateOpeningBalanceRecord),
+      "Opening balance updated successfully.",
+    );
+  }
+
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerShown: false,
-        }}
-      />
+      <Stack.Screen options={{ headerShown: false }} />
 
       <ScreenContainer scrollable contentStyle={styles.container}>
         <View style={styles.header}>
@@ -103,15 +243,11 @@ export default function AccountDetailsScreen() {
               {error}
             </Text>
 
-            {accountId && (
-              <AppButton
-                onPress={() => setReloadToken((current) => current + 1)}
-              >
-                Try again
-              </AppButton>
-            )}
+            <AppButton onPress={() => setReloadToken((current) => current + 1)}>
+              Try again
+            </AppButton>
           </View>
-        ) : account ? (
+        ) : account && lifecycleStatus ? (
           <>
             <AppCard>
               <View style={styles.accountHeader}>
@@ -175,7 +311,6 @@ export default function AccountDetailsScreen() {
               )}
 
               <DetailRow label="Account name" value={account.name} />
-
               <DetailRow label="Opening date" value={account.openingDate} />
 
               <DetailRow
@@ -194,11 +329,113 @@ export default function AccountDetailsScreen() {
                 isLast
               />
             </AppCard>
+
+            <AppCard>
+              <Text style={[styles.sectionTitle, { color: themeColors.text }]}>
+                Account lifecycle
+              </Text>
+
+              <AppButton
+                variant={account.isActive ? "danger" : "primary"}
+                disabled={
+                  isSaving ||
+                  (account.isActive &&
+                    lifecycleStatus.hasActiveRecurringReferences)
+                }
+                onPress={handleActivation}
+              >
+                {account.isActive ? "Deactivate account" : "Activate account"}
+              </AppButton>
+
+              {account.isActive &&
+                lifecycleStatus.hasActiveRecurringReferences && (
+                  <Text
+                    style={[styles.warning, { color: themeColors.warning }]}
+                  >
+                    An active recurring schedule references this account. Pause
+                    or stop that schedule before deactivating this account.
+                  </Text>
+                )}
+
+              {lifecycleStatus.hasTransactions ? (
+                <Text
+                  style={[styles.info, { color: themeColors.textSecondary }]}
+                >
+                  This account has transaction history. Its opening balance
+                  cannot be edited. Future corrections must use a balance
+                  adjustment.
+                </Text>
+              ) : (
+                <>
+                  <Text
+                    style={[styles.fieldLabel, { color: themeColors.text }]}
+                  >
+                    Edit opening balance (LKR)
+                  </Text>
+
+                  <TextInput
+                    value={openingBalanceInput}
+                    onChangeText={setOpeningBalanceInput}
+                    keyboardType="decimal-pad"
+                    editable={!isSaving}
+                    placeholder="0.00"
+                    placeholderTextColor={themeColors.textSecondary}
+                    style={[
+                      styles.input,
+                      {
+                        color: themeColors.text,
+                        borderColor: themeColors.border,
+                        backgroundColor: themeColors.surface,
+                      },
+                    ]}
+                  />
+
+                  <AppButton
+                    variant="secondary"
+                    disabled={isSaving}
+                    onPress={() => void handleOpeningBalanceUpdate()}
+                  >
+                    Save opening balance
+                  </AppButton>
+                </>
+              )}
+
+              {account.type === "WALLET" ? (
+                <Text
+                  style={[styles.info, { color: themeColors.textSecondary }]}
+                >
+                  The primary wallet is required for the initial setup and
+                  cannot be permanently deleted.
+                </Text>
+              ) : lifecycleStatus.canDelete ? (
+                <AppButton
+                  variant="danger"
+                  disabled={isSaving}
+                  onPress={handleDelete}
+                >
+                  Delete account
+                </AppButton>
+              ) : (
+                <Text
+                  style={[styles.info, { color: themeColors.textSecondary }]}
+                >
+                  This account cannot be deleted because it has transaction
+                  history or is referenced by a recurring schedule.
+                </Text>
+              )}
+            </AppCard>
           </>
         ) : null}
       </ScreenContainer>
     </>
   );
+}
+
+function minorUnitsToInput(amount: number): string {
+  const rupees = Math.floor(amount / 100);
+  const cents = String(amount % 100).padStart(2, "0");
+
+  return `${rupees}.${cents}`;
 }
 
 function DetailRow({
@@ -297,6 +534,28 @@ const styles = StyleSheet.create({
     fontSize: typography.size.sm,
     fontWeight: typography.weight.medium,
     textAlign: "right",
+  },
+  fieldLabel: {
+    fontSize: typography.size.sm,
+    fontWeight: typography.weight.medium,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  input: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    fontSize: typography.size.md,
+    marginBottom: spacing.md,
+  },
+  info: {
+    fontSize: typography.size.sm,
+    lineHeight: 22,
+  },
+  warning: {
+    fontSize: typography.size.sm,
+    lineHeight: 22,
   },
   loader: {
     marginTop: spacing.xxl,
