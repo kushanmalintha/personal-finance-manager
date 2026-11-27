@@ -65,3 +65,20 @@ export interface Account {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * Category owned by the authenticated user.
+ *
+ * Categories are used to classify income and expense transactions.
+ */
+export interface Category {
+  id: string;
+  name: string;
+  type: CategoryType;
+  icon: string;
+  color: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
