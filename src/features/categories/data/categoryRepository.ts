@@ -292,6 +292,86 @@ export const categoryRepository: CategoryRepository = {
   },
 
   /**
+   * Reactivate a previously deactivated category.
+   *
+   * The existing category document is preserved. Its name reservation
+   * is also retained or recreated if missing.
+   *
+   * Duplicate names are checked before reactivation.
+   */
+  async reactivateCategory(categoryId: string): Promise<void> {
+    const userId = getCurrentUserId();
+
+    const categoryRef = getCategoryDocument(userId, categoryId);
+    const snapshot = await getDoc(categoryRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("Category not found.");
+    }
+
+    const existingCategory = categoryFromFirestore(
+      snapshot.id,
+      snapshot.data(),
+    );
+
+    // Check for duplicate names, including inactive categories.
+    // Exclude the category being reactivated.
+    await assertNoDuplicateCategoryName(
+      userId,
+      existingCategory.type,
+      existingCategory.name,
+      categoryId,
+    );
+
+    const lockRef = getCategoryNameLockDocument(
+      userId,
+      existingCategory.type,
+      existingCategory.name,
+    );
+
+    await runTransaction(db, async (transaction) => {
+      // Re-read the category inside the transaction.
+      const categorySnapshot = await transaction.get(categoryRef);
+
+      if (!categorySnapshot.exists()) {
+        throw new Error("Category not found.");
+      }
+
+      const currentCategory = categoryFromFirestore(
+        categorySnapshot.id,
+        categorySnapshot.data(),
+      );
+
+      // Read the category's name reservation.
+      const lockSnapshot = await transaction.get(lockRef);
+
+      // The name must not be reserved by another category.
+      if (
+        lockSnapshot.exists() &&
+        lockSnapshot.data().categoryId !== categoryId
+      ) {
+        throwDuplicateCategoryName(currentCategory.type);
+      }
+
+      // Recreate the reservation if it is missing.
+      if (!lockSnapshot.exists()) {
+        transaction.set(lockRef, {
+          categoryId,
+          type: currentCategory.type,
+          normalizedName: normalizeCategoryName(currentCategory.name),
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      // Restore the category without changing its other properties.
+      transaction.update(categoryRef, {
+        isActive: true,
+        updatedAt: serverTimestamp(),
+      });
+    });
+  },
+
+  /**
    * Retrieve all categories belonging to the current user.
    */
   async getCategories(): Promise<Category[]> {

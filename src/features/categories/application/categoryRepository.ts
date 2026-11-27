@@ -35,4 +35,6 @@ export interface CategoryRepository {
   ): Promise<Category>;
 
   deactivateCategory(categoryId: string): Promise<void>;
+
+  reactivateCategory(categoryId: string): Promise<void>;
 }

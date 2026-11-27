@@ -1,12 +1,12 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 
 import { AppButton } from "@/src/components/common/AppButton";
@@ -15,6 +15,7 @@ import { ScreenContainer } from "@/src/components/common/ScreenContainer";
 import { createCategory } from "@/src/features/categories/application/createCategory";
 import { deactivateCategory } from "@/src/features/categories/application/deactivateCategory";
 import { getCategories } from "@/src/features/categories/application/getCategories";
+import { reactivateCategory } from "@/src/features/categories/application/reactivateCategory";
 import { updateCategory } from "@/src/features/categories/application/updateCategory";
 import { categoryRepository } from "@/src/features/categories/data/categoryRepository";
 import { CategoryFormModal } from "@/src/features/categories/presentation/CategoryFormModal";
@@ -32,6 +33,7 @@ export default function CategoriesScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -157,6 +159,43 @@ export default function CategoriesScreen() {
       );
     } finally {
       setDeactivatingId(null);
+    }
+  }
+
+  function confirmReactivate(category: Category) {
+    Alert.alert(
+      "Reactivate Category",
+      `Are you sure you want to reactivate "${category.name}"? It will become available for new transactions again.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Reactivate",
+          onPress: () => {
+            void handleReactivate(category);
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleReactivate(category: Category) {
+    setReactivatingId(category.id);
+    setError(null);
+
+    try {
+      await reactivateCategory(categoryRepository, category.id);
+      await loadCategories();
+    } catch (reactivateError) {
+      setError(
+        reactivateError instanceof Error
+          ? reactivateError.message
+          : "Unable to reactivate category.",
+      );
+    } finally {
+      setReactivatingId(null);
     }
   }
 
@@ -295,32 +334,57 @@ export default function CategoriesScreen() {
                   </View>
                 </View>
 
-                {category.isActive && (
-                  <View style={styles.actions}>
-                    <Pressable
-                      onPress={() => openEditForm(category)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Edit ${category.name}`}
-                      style={styles.actionButton}
-                    >
-                      <Text style={{ color: theme.primary }}>Edit</Text>
-                    </Pressable>
+                <View style={styles.actions}>
+                  {category.isActive ? (
+                    <>
+                      <Pressable
+                        onPress={() => openEditForm(category)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${category.name}`}
+                        style={styles.actionButton}
+                      >
+                        <Text style={{ color: theme.primary }}>Edit</Text>
+                      </Pressable>
 
+                      <Pressable
+                        onPress={() => confirmDeactivate(category)}
+                        disabled={
+                          deactivatingId === category.id ||
+                          reactivatingId === category.id
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={`Deactivate ${category.name}`}
+                        style={styles.actionButton}
+                      >
+                        {deactivatingId === category.id ? (
+                          <ActivityIndicator
+                            color={theme.danger}
+                            size="small"
+                          />
+                        ) : (
+                          <Text style={{ color: theme.danger }}>Disable</Text>
+                        )}
+                      </Pressable>
+                    </>
+                  ) : (
                     <Pressable
-                      onPress={() => confirmDeactivate(category)}
-                      disabled={deactivatingId === category.id}
+                      onPress={() => confirmReactivate(category)}
+                      disabled={
+                        reactivatingId === category.id ||
+                        deactivatingId === category.id
+                      }
                       accessibilityRole="button"
-                      accessibilityLabel={`Deactivate ${category.name}`}
+                      accessibilityLabel={`Reactivate ${category.name}`}
                       style={styles.actionButton}
                     >
-                      {deactivatingId === category.id ? (
-                        <ActivityIndicator color={theme.danger} size="small" />
+                      {reactivatingId === category.id ? (
+                        <ActivityIndicator color={theme.primary} size="small" />
                       ) : (
-                        <Text style={{ color: theme.danger }}>Disable</Text>
+                        <Text style={{ color: theme.primary }}>Reactivate</Text>
                       )}
                     </Pressable>
-                  </View>
-                )}
+                  )}
+                </View>
               </View>
             </AppCard>
           ))}
