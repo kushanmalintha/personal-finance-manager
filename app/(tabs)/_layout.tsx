@@ -104,6 +104,7 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <SymbolView
               name={{
@@ -115,15 +116,6 @@ export default function TabLayout() {
               size={24}
             />
           ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="categories"
-        options={{
-          href: null,
-          title: "Categories",
-          headerShown: true,
         }}
       />
     </Tabs>

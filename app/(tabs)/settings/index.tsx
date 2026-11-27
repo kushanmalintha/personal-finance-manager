@@ -12,7 +12,7 @@ export default function SettingsScreen() {
   const theme = colors[scheme];
 
   function openCategories() {
-    router.push("/categories");
+    router.push("/(tabs)/settings/categories");
   }
 
   return (
