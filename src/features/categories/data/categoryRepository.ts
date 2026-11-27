@@ -191,6 +191,9 @@ export const categoryRepository: CategoryRepository = {
   /**
    * Update the editable properties of an existing category.
    * The category type and default status remain unchanged.
+   *
+   * Duplicate names are not allowed within the same category type.
+   * Inactive categories are also included in duplicate checks.
    */
   async updateCategory(
     categoryId: string,
@@ -210,20 +213,51 @@ export const categoryRepository: CategoryRepository = {
       snapshot.data(),
     );
 
+    const categoryName = input.name.trim();
+    const normalizedName = normalizeCategoryName(categoryName);
+
+    // Retrieve categories of the same type.
+    const categoriesQuery = query(
+      getCategoriesCollection(userId),
+      where("type", "==", existingCategory.type),
+    );
+
+    const categoriesSnapshot = await getDocs(categoriesQuery);
+
+    // Exclude the current category and check for duplicates.
+    const duplicateExists = categoriesSnapshot.docs.some((document) => {
+      if (document.id === categoryId) {
+        return false;
+      }
+
+      const existingName = document.data().name;
+
+      return (
+        typeof existingName === "string" &&
+        normalizeCategoryName(existingName) === normalizedName
+      );
+    });
+
+    if (duplicateExists) {
+      throw new Error(
+        `A ${existingCategory.type.toLowerCase()} category with this name already exists.`,
+      );
+    }
+
     const updatedAt = new Date();
 
     await updateDoc(categoryRef, {
-      name: input.name,
-      icon: input.icon,
-      color: input.color,
+      name: categoryName,
+      icon: input.icon.trim(),
+      color: input.color.trim(),
       updatedAt: serverTimestamp(),
     });
 
     return {
       ...existingCategory,
-      name: input.name,
-      icon: input.icon,
-      color: input.color,
+      name: categoryName,
+      icon: input.icon.trim(),
+      color: input.color.trim(),
       updatedAt,
     };
   },
