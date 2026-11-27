@@ -17,6 +17,8 @@ import { AppCard } from "@/src/components/common/AppCard";
 import { ScreenContainer } from "@/src/components/common/ScreenContainer";
 import { completeInitialSetup } from "@/src/features/accounts/application/completeInitialSetup";
 import { saveInitialSetup } from "@/src/features/accounts/data/initialSetupRepository";
+import { initializeDefaultCategories } from "@/src/features/categories/application/initializeDefaultCategories";
+import { categoryRepository } from "@/src/features/categories/data/categoryRepository";
 import { useColorScheme } from "@/src/hooks/useColorScheme";
 import { useAuthSessionStore } from "@/src/store/authSessionStore";
 import {
@@ -195,7 +197,8 @@ export default function InitialSetupScreen() {
 
   /**
    * Convert the form's LKR strings into integer minor units,
-   * validate through the application use case, and save.
+   * initialize predefined categories, validate through the
+   * application use case, and save the initial setup.
    */
   const onSubmit = async (values: InitialSetupFormValues) => {
     setSubmissionError(null);
@@ -217,6 +220,10 @@ export default function InitialSetupScreen() {
           openingDate: account.openingDate,
         })),
       };
+
+      // Ensure all predefined categories exist before saving
+      // the user's initial financial setup.
+      await initializeDefaultCategories(categoryRepository);
 
       // The application layer validates the input and delegates
       // persistence to the injected data-layer operation.

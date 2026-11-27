@@ -22,6 +22,8 @@ import {
 } from "@/src/features/auth/application/loginSchema";
 import { loginUser } from "@/src/features/auth/application/loginUser";
 import { loginWithEmail } from "@/src/features/auth/data/authService";
+import { initializeDefaultCategories } from "@/src/features/categories/application/initializeDefaultCategories";
+import { categoryRepository } from "@/src/features/categories/data/categoryRepository";
 import { useColorScheme } from "@/src/hooks/useColorScheme";
 import {
   colors,
@@ -103,7 +105,9 @@ export default function LoginScreen() {
     setIsSubmitting(true);
 
     try {
-      await loginUser(values, loginWithEmail, getInitialSetupStatus);
+      await loginUser(values, loginWithEmail, getInitialSetupStatus, () =>
+        initializeDefaultCategories(categoryRepository),
+      );
 
       // Navigation will be handled by the authentication gate
       // in the later authentication and navigation tasks.

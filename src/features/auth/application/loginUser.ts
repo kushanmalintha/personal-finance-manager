@@ -15,10 +15,13 @@ export type ResolveInitialSetupStatus = () => Promise<
   "NOT_STARTED" | "COMPLETED" | "INCONSISTENT"
 >;
 
+export type EnsureDefaultCategories = () => Promise<void>;
+
 export async function loginUser(
   input: LoginInput,
   loginAccount: LoginAccount,
   resolveInitialSetupStatus: ResolveInitialSetupStatus,
+  ensureDefaultCategories: EnsureDefaultCategories,
 ): Promise<AuthenticatedUser> {
   const validatedInput = loginSchema.parse(input);
 
@@ -34,7 +37,15 @@ export async function loginUser(
     throw new Error("INITIAL_SETUP_DATA_INCONSISTENT");
   }
 
-  // Open the application session with the correct setup status.
+  // Ensure existing users have all predefined categories.
+  // The repository creates only missing categories and preserves
+  // existing customizations and deactivated categories.
+  if (setupStatus === "COMPLETED") {
+    await ensureDefaultCategories();
+  }
+
+  // Open the application session only after the required
+  // initialization has completed successfully.
   useAuthSessionStore
     .getState()
     .startSession(user.uid, setupStatus === "COMPLETED");
