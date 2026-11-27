@@ -12,9 +12,6 @@ export interface CreateCategoryInput {
 
 /**
  * Fields that can be changed when editing a category.
- *
- * The category type and default status are not changed
- * through this update operation.
  */
 export interface UpdateCategoryInput {
   name: string;
@@ -24,11 +21,10 @@ export interface UpdateCategoryInput {
 
 /**
  * Contract for category persistence operations.
- *
- * Implementations belong to the data layer.
- * The application layer depends only on this contract.
  */
 export interface CategoryRepository {
+  initializeDefaultCategories(): Promise<void>;
+
   getCategories(): Promise<Category[]>;
 
   createCategory(input: CreateCategoryInput): Promise<Category>;

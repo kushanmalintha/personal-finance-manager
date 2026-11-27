@@ -1,21 +1,29 @@
 import {
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
 } from "firebase/firestore";
 
 import { auth, db } from "@/src/services/firebase";
 import type { Category } from "@/src/types/domain";
 
 import type {
-    CategoryRepository,
-    CreateCategoryInput,
-    UpdateCategoryInput,
+  CategoryRepository,
+  CreateCategoryInput,
+  UpdateCategoryInput,
 } from "../application/categoryRepository";
+
+import {
+  DEFAULT_CATEGORY_COLOR,
+  DEFAULT_CATEGORY_ICON,
+  DEFAULT_EXPENSE_CATEGORIES,
+  DEFAULT_INCOME_CATEGORIES,
+} from "../domain/defaultCategories";
 
 import { categoryFromFirestore } from "./categoryMapper";
 
@@ -41,6 +49,53 @@ function getCategoryDocument(userId: string, categoryId: string) {
  * Firestore implementation of the CategoryRepository contract.
  */
 export const categoryRepository: CategoryRepository = {
+  /**
+   * Ensure that all predefined categories exist for the current user.
+   *
+   * Existing documents are never overwritten. This preserves
+   * user customizations and deactivated categories.
+   */
+  async initializeDefaultCategories(): Promise<void> {
+    const userId = getCurrentUserId();
+
+    const categories = [
+      ...DEFAULT_EXPENSE_CATEGORIES,
+      ...DEFAULT_INCOME_CATEGORIES,
+    ];
+
+    const categoryRefs = categories.map((category) =>
+      getCategoryDocument(userId, category.id),
+    );
+
+    await runTransaction(db, async (transaction) => {
+      // Read every predefined category before performing writes.
+      const snapshots = await Promise.all(
+        categoryRefs.map((categoryRef) => transaction.get(categoryRef)),
+      );
+
+      // Create only documents that do not already exist.
+      for (const [index, category] of categories.entries()) {
+        const snapshot = snapshots[index];
+        const categoryRef = categoryRefs[index];
+
+        if (!snapshot || !categoryRef || snapshot.exists()) {
+          continue;
+        }
+
+        transaction.set(categoryRef, {
+          name: category.name,
+          type: category.type,
+          icon: DEFAULT_CATEGORY_ICON,
+          color: DEFAULT_CATEGORY_COLOR,
+          isDefault: true,
+          isActive: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+  },
+
   /**
    * Retrieve all categories belonging to the current user.
    */
