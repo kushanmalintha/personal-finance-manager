@@ -3,10 +3,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 
 import { auth, db } from "@/src/services/firebase";
@@ -43,6 +45,13 @@ function getCategoriesCollection(userId: string) {
 
 function getCategoryDocument(userId: string, categoryId: string) {
   return doc(getCategoriesCollection(userId), categoryId);
+}
+
+/**
+ * Normalize category names for duplicate checking.
+ */
+function normalizeCategoryName(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 /**
@@ -114,16 +123,23 @@ export const categoryRepository: CategoryRepository = {
 
   /**
    * Create a custom category for the current user.
+   *
+   * Duplicate names are not allowed within the same category type.
+   * Inactive categories are also included in duplicate checks.
    */
   async createCategory(input: CreateCategoryInput): Promise<Category> {
     const userId = getCurrentUserId();
 
-    const categoryRef = doc(getCategoriesCollection(userId));
+    const categoriesCollection = getCategoriesCollection(userId);
+    const categoryRef = doc(categoriesCollection);
+
+    const categoryName = input.name.trim();
+    const normalizedName = normalizeCategoryName(categoryName);
     const now = new Date();
 
     const category: Category = {
       id: categoryRef.id,
-      name: input.name,
+      name: categoryName,
       type: input.type,
       icon: input.icon,
       color: input.color,
@@ -133,13 +149,38 @@ export const categoryRepository: CategoryRepository = {
       updatedAt: now,
     };
 
+    const categoriesQuery = query(
+      categoriesCollection,
+      where("type", "==", input.type),
+    );
+
+    // Retrieve existing categories of the same type.
+    const snapshot = await getDocs(categoriesQuery);
+
+    // Check for duplicates, including inactive categories.
+    const duplicateExists = snapshot.docs.some((document) => {
+      const existingName = document.data().name;
+
+      return (
+        typeof existingName === "string" &&
+        normalizeCategoryName(existingName) === normalizedName
+      );
+    });
+
+    if (duplicateExists) {
+      throw new Error(
+        `A ${input.type.toLowerCase()} category with this name already exists.`,
+      );
+    }
+
+    // Save the new custom category.
     await setDoc(categoryRef, {
       name: category.name,
       type: category.type,
       icon: category.icon,
       color: category.color,
-      isDefault: category.isDefault,
-      isActive: category.isActive,
+      isDefault: false,
+      isActive: true,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
